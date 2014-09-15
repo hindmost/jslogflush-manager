@@ -1,0 +1,12 @@
+{
+    "repositories": [
+        {
+            "type": "git",
+            "url": "http://github.com/hindmost/jslogflush"
+        }
+    ],
+    "require": {
+        "php": ">=5.0.0",
+        "hindmost/jslogflush": "1.0.*"
+    },
+}
