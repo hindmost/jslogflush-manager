@@ -4,10 +4,8 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
 
     var Cfg = Backbone.Model.extend({
         initialize: function(){
-            console.log('Cfg.initialize(): app_urls=%o', this.get('app_urls'));
         },
         sync: function(method, model, options){
-            console.log('Cfg:sync(): method=%s',method);
             var params = method == 'read'?
                 {
                     type: 'GET', url: urlCfg, dataType: 'json'
@@ -32,22 +30,18 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
               (Backbone.$.Deferred && Backbone.$.Deferred()) :
               (Backbone.Deferred && Backbone.Deferred());
             var urls = this.get('app_urls'), url;
-            console.log('Cfg:syncUrls(): method=%s; options=%o; urls=%o',method,options,urls);
             if (urls)
             switch (method) {
             case 'read':
-                console.log('read:');
                 resp = _.map(urls, this.buildUrlAttrs);
                 break;
             case 'create': case 'update':
                 url = model.attributes.id;
-                console.log('create: model=%o; url=%s',model, url);
                 if (_.indexOf(urls, url) < 0)
                     this.save({app_urls: _.union(urls, url)});
                 break;
             case 'delete':
                 url = model.attributes.id;
-                console.log('delete: model=%o; url=%s',model, url);
                 if (_.indexOf(urls, url) >= 0)
                     this.save({app_urls: _.without(urls, url)});
                 break;
@@ -73,10 +67,8 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             i: 0
         },
         initialize: function() {
-            console.log('Url:initialize(): attributes=%o',this.attributes);
         },
         sync: function(method, model, options){
-            console.log('Url:sync():');
             return cfg.syncUrls(method, model, options);
         }
     });
@@ -87,17 +79,13 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.listenTo(cfg, 'sync', this.onCfgSync);
         },
         sync: function(method, list, options){
-            console.log('UrlList:sync():');
             return cfg.syncUrls(method, list, options);
         },
         onCfgSync: function(model, resp, options) {
-            console.log('UrlList:onCfgSync(): options=%o',options);
             if (resp) {
-                console.log('on-fetch: resp=%o',resp);
                 this.fetch();
             }
             else {
-                console.log('on-save');
                 cfg.fetch();
                 callFilelistFetch();
             }
@@ -118,7 +106,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             i: 0
         },
         sync: function(method, model, options) {
-            console.log('File:sync(): method=%s; model.attrs=%o',method,model.attributes);
             var params = {
                 type: 'POST', url: urlFilelist,
                 data: {id: model.attributes.id}
@@ -139,7 +126,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.lastfetch = 0;
         },
         parse: function(response) {
-            console.log('parse(): response=%o',response);
             var aResp = [], i = 0;
             for (var key in response) {
                 if (typeof key != 'string') continue;
@@ -153,11 +139,9 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
                     ip: arr[2], useragent: arr[3], i: ++i
                 });
             }
-            console.log('aResp=%o',aResp);
             return aResp;
         },
         sync: function(method, list, options) {
-            console.log('FileList:sync(): method=%s; options=%o; lastfetch=%d',method,options,this.lastfetch);
             if (method != 'read') return false;
             var params = {
                 type: 'GET', url: urlFilelist,
@@ -169,14 +153,12 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             return xhr;
         },
         filterByUrl: function(url) {
-            console.log('filterByUrl(): url=%s',url);
             this.each(function(model) {
                 model.set('display', !url || model.get('url') == url);
             });
         },
         filterByIp: function(ip) {
             if (!ip) return;
-            console.log('filterByUrl(): ip=%s',ip);
             this.each(function(model) {
                 if (model.get('display'))
                     model.set('display', model.get('ip') == ip);
@@ -184,7 +166,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         destroyVisible: function() {
             var list = this.where({'display': true});
-            console.log('destroyVisible(): list=%d',list.length);
             if (!list.length) return;
             var dfd = 0;
             _.each(list, function(model) {
@@ -197,7 +178,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
 
     var fetchCount = 0, fetchId = 0, fetchFlag = true;
     function callFilelistFetch() {
-        console.log('callFilelistFetch(): intFilelistFetch=%d; fetchId=%d; fetchCount=%d; fetchFlag=%d',intFilelistFetch,fetchId,fetchCount,fetchFlag);
         if (fetchId) clearTimeout(fetchId);
         if (fetchCount && fetchFlag) fileList.fetch({remove: true});
         fetchCount = 1;
@@ -205,7 +185,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     }
     function setFilelistFetchFlag(b) {
         fetchFlag = Boolean(b);
-        console.log('setFilelistFetchFlag(): fetchFlag=%d',fetchFlag);
     }
 
     var Selection = Backbone.Model.extend({
@@ -219,24 +198,20 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             var v;
             if (this.idLs && (v = localStorage.getItem(this.idLs)))
                 this.set('value', v);
-            console.log('Selection:initialize(): idLs=%s; value=%s',this.idLs,this.get('value'));
             this.apply();
         },
         select: function(value, bUseDesel) {
             var b = this.get('value') != value;
-            console.log('Selection:select(): value=%s (%s); bUseDesel=%d; b=%d',value,this.get('value'),bUseDesel,b);
             if (!b && !bUseDesel) return;
             this.set('value', b? value : 0);
             if (this.idLs) localStorage.setItem(this.idLs, this.get('value'));
         },
         apply: function() {
-            console.log('Selection:apply():');
         }
     });
 
     var UrlSelection = Selection.extend({
         initialize: function() {
-            console.log('UrlSelection:initialize():');
             Selection.prototype.initialize.call(this, 'sel-url');
         },
         getModel: function() {
@@ -245,7 +220,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         apply: function() {
             var v = this.get('value');
-            console.log('UrlSelection:apply(): v=%s',v);
             fileList.filterByUrl(v? v : 0);
         }
     });
@@ -253,7 +227,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     
     var FileSelection = Selection.extend({
         initialize: function() {
-            console.log('FileSelection:initialize():');
             Selection.prototype.initialize.call(this, 'sel-file');
         },
         getModel: function() {
@@ -270,15 +243,12 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         initialize: function(){
             this.listenTo(fileList, 'change:display', this.reset);
-            console.log('FileFilter:initialize(): value=%d', this.get('value'));
         },
         reset: function() {
-            console.log('FileFilter:reset():');
             this.set('value', false);
             setFilelistFetchFlag(true);
         },
         setValue: function(v) {
-            console.log('FileFilter:setValue(): v=%d',v);
             this.set('value', v);
             setFilelistFetchFlag(false);
         }
@@ -294,28 +264,23 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         initialize: function() {
             this.listenTo(this.model, 'destroy', function() {
-                console.log('UrlView:remove-from-destroy:');
                 this.remove();
             });
             this.listenTo(this.model, 'remove', function() {
-                console.log('UrlView:remove-from-remove:');
                 this.model.clear({silent:true});
                 this.remove();
             });
         },
         render: function() {
-            console.log('UrlView:render(): model=%o', this.model.attributes);
             this.$el.html( this.template( this.model.toJSON() ) );
             return this;
         },
         select: function(e) {
             e.preventDefault();
-            console.log('UrlView:select(): id=%s', this.model.get('id'));
             urlSelection.select(this.model.get('id'), true);
         },
         destroy: function(e) {
             e.preventDefault();
-            console.log('UrlView:destroy(): model=%o', this.model);
             this.model.destroy();
         }
     });
@@ -328,7 +293,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             urlList.fetch();
         },
         render: function() {
-            console.log('UrlListView:render(): n(urlList)=%d', urlList.length);
             if (urlList.length)
                 this.$el.show();
             else
@@ -336,13 +300,11 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             return this;
         },
         addOne: function(item) {
-            console.log('UrlListView:addOne(): model=%o', item.attributes);
             if (!('id' in item.attributes)) return;
             var urlView = new UrlView({model:item});
             this.$el.append(urlView.render().el);
         },
         addAll: function() {
-            console.log('UrlListView:addAll(): n(urlList)=%d', urlList.length);
             urlList.each(this.addOne, this);
         }
     });
@@ -358,17 +320,14 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         initialize: function() {
             this.listenTo(this.model, 'change', this.render);
             this.listenTo(this.model, 'destroy', function() {
-                console.log('FileView:remove-from-destroy:');
                 this.remove();
             });
             this.listenTo(this.model, 'remove', function() {
-                console.log('FileView:remove-from-remove:');
                 this.model.clear({silent:true});
                 this.remove();
             });
         },
         render: function() {
-            console.log('FileView:render(): id=%s; display=%d', this.model.get('id'), this.model.get('display'));
             if (this.model.get('display'))
                 this.$el.html( this.template( this.model.toJSON() ) ).show();
             else
@@ -377,12 +336,10 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         select: function(e) {
             e.preventDefault();
-            console.log('FileView:select(): id=%s', this.model.get('id'));
             fileSelection.select(this.model.get('id'));
         },
         destroy: function(e) {
             e.preventDefault();
-            console.log('FileView:destroy():');
             this.model.destroy().done(callFilelistFetch);
         }
     });
@@ -397,7 +354,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             callFilelistFetch();
         },
         render: function() {
-            console.log('FileListView:render(): n(fileList)=%d', fileList.length);
             if (fileList.length)
                 this.$el.show();
             else
@@ -405,13 +361,11 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             return this;
         },
         addOne: function(item) {
-            console.log('FileListView:addOne(): model=%o', item.attributes);
             if (!('id' in item.attributes)) return;
             var fileView = new FileView({model:item});
             this.$el.append(fileView.render().el);
         },
         addAll: function() {
-            console.log('FileListView:addAll(): n(fileList)=%d', fileList.length);
             fileList.each(this.addOne, this);
         }
     });
@@ -419,14 +373,12 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
 
     var SelectionView = Backbone.View.extend({
         initialize: function() {
-            console.log('SelectionView:initialize(): value=%s',this.model.get('value'));
             this.listenTo(this.model, 'change', this.render);
             if (this.model.get('value')) this.render();
         },
         render: function() {
             var els = this.$el.children('li');
             var i = this.getIndex();
-            console.log('SelectionView:render(): n(els)=%d; i=%d', els.length, i);
             if (els.length) {
                 els.removeClass('active');
                 if (i && i <= els.length) els.eq(i-1).addClass('active');
@@ -442,7 +394,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         el: $('#url-list'),
         getIndex: function() {
             var model = this.model.getModel();
-            console.log('UrlSelectionView:getIndex(): value=%s; model=%o',this.model.get('value'),model);
             return model? model.get('i') : 0;
         }
     });
@@ -451,7 +402,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     var FileSelectionView = SelectionView.extend({
         el: $('#file-list'),
         initialize: function() {
-            console.log('FileSelectionView:initialize():');
             this.listenTo(fileList, 'change', this.render);
             this.listenTo(fileList, 'remove', this.render);
             this.cache = 0;
@@ -459,23 +409,19 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         getIndex: function() {
             var model = this.model.getModel();
-            console.log('FileSelectionView:getIndex(): value=%s (%s); model=%o',this.model.get('value'),this.cache,model);
             this.callContent(this.model.get('value'), model);
             return model? model.get('i') : 0;
         },
         callContent: function(value, model) {
             if (!model) {
-                console.log('FileSelectionView:callContent(): display off');
                 fileContent.set('display', false);
                 return;
             }
             if (value == this.cache) {
-                console.log('FileSelectionView:callContent(): display on');
                 fileContent.set('display', true);
                 return;
             }
             var urlCont = model.get('path');
-            console.log('FileSelectionView:callContent(): urlCont=%s',urlCont);
             fileContent.set({display: false, content: ''});
             $.ajax({
                 url: urlCont, type: 'GET', dataType: 'text', context: this,
@@ -513,9 +459,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.listenTo(this.model, 'change', this.render);
         },
         render: function() {
-            console.log('FileContentView:render(): display=%d; content=%d', this.model.get('display'), Boolean(this.model.get('content')));
             if (this.model.get('display') && this.model.get('content')) {
-                console.log('display: on');
                 this.$el.html( this.template( this.model.toJSON() ) ).show();
             }
             else
@@ -532,14 +476,12 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             'click button.save' : 'saveForm'
         },
         initialize: function() {
-            console.log('CfgView:initialize():');
             var self = this;
             this.$el.on('show.bs.modal', function () {
                 self.render();
             });
         },
         render: function() {
-            console.log('CfgView:render(): model=%o',this.model.toJSON());
             this.$('form').html( this.template( this.model.toJSON() ) );
             return this;
         },
@@ -549,7 +491,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             _.each(this.$('form').serializeArray(), function(obj) {
                 attrs[obj.name] = parseFloat(obj.value);
             });
-            console.log('CfgView:saveForm(): attrs=%o',attrs);
             if (Object.keys(attrs).length) this.model.save(attrs, {wait: true});
             this.$el.modal('hide');
         }
@@ -571,7 +512,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         render: function() {
             var v = this.model.get('value');
-            console.log('ControlsView:render(): v=%s', v);
             if (v)
                 this.btn.addClass('active').children('.value').html(': '+v);
             else
@@ -582,7 +522,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             if (e.which != 13) return;
             var el = e.target;
             var v = $(el).val();
-            console.log('ControlsView:create(): v=%s',v);
             if (!v) return;
             $(el).val('').blur();
             urlList.create(cfg.buildUrlAttrs(v));
@@ -590,7 +529,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         refresh: function(e) {
             e.preventDefault();
             $(e.target).blur();
-            console.log('ControlsView:refresh():');
             callFilelistFetch();
         },
         toggle: function(e) {
@@ -598,16 +536,13 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             $(e.target).blur();
             var v = this.model.get('value');
             var model = v? false : fileSelection.getModel();
-            console.log('ControlsView:toggle(): v=%s; model=%o',v,model);
             if (!v && !model) return;
             if (!v) {
                 v = model.get('ip');
-                console.log('applyFilter: v=%s', v);
                 fileList.filterByIp(v);
                 this.model.setValue(v);
             }
             else {
-                console.log('resetFilter:');
                 this.model.reset();
                 urlSelection.apply();
             }
