@@ -16,6 +16,8 @@ How to use
 -------------
 Plug _JS LogFlush_ [processing script](http://demos.savreen.com/jslogflush-manager/logger.php) into your web application by following [README instructions](https://github.com/hindmost/jslogflush), register the latter in the manager by entering its URL in the "New web app" field and you can watch and manage all the data logged (by console.log calls) in your web app.
 
+[Screencast](http://youtu.be/AFfTu2F3leM)
+
 
 Thanks
 -------------
