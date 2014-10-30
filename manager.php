@@ -149,7 +149,7 @@ if (!$cfg || !is_array($list)) return;
                 <dt>Session started:</dt>
                 <dd><%= time %></dd>
             </dl>
-            <pre class="pre-scrollable"><%= content %></pre>
+            <pre class="pre-scrollable"><%= selected %></pre>
         </script>
 
         <script type="text/template" id="config-template">

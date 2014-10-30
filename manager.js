@@ -19,10 +19,10 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             model.trigger('request', model, xhr, options);
             return xhr;
         },
-        buildUrlAttrs: function(url, i){
+        buildUrlAttrs: function(url){
             var title = url.substr(url.indexOf('://')+3);
             if (title.length > 35) title = title.substr(0, 35)+ '...';
-            return {id: url, title: title, i: typeof i != 'undefined'? i+1 : 0};
+            return {id: url, title: title};
         },
         syncUrls: function(method, model, options){
             var resp, errMsg = 'Sync error';
@@ -64,7 +64,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         defaults: {
             id: '',
             title: '',
-            i: 0
+            selected: false
         },
         initialize: function() {
         },
@@ -101,9 +101,8 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             time: 0,
             ip: '',
             useragent: '',
-            display: true,
-            content: '',
-            i: 0
+            visible: true,
+            selected: false
         },
         sync: function(method, model, options) {
             var params = {
@@ -113,12 +112,8 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             var xhr = options.xhr = Backbone.ajax(_.extend(params, options));
             model.trigger('request', model, xhr, options);
             return xhr;
-        },
-        setDisplay: function(b) {
-            this.set('display', b);
         }
     });
-    var fileContent = new File({display:false});
 
     var FileList = Backbone.Collection.extend({
         model : File,
@@ -126,7 +121,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.lastfetch = 0;
         },
         parse: function(response) {
-            var aResp = [], i = 0;
+            var aResp = [];
             for (var key in response) {
                 if (typeof key != 'string') continue;
                 if (key == 'stamp') {
@@ -136,7 +131,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
                 aResp.push({
                     id: key, path: cfg.get('dir')+key, url: arr[0],
                     time: (new Date(arr[1]*1000)).toLocaleString(),
-                    ip: arr[2], useragent: arr[3], i: ++i
+                    ip: arr[2], useragent: arr[3]
                 });
             }
             return aResp;
@@ -154,18 +149,18 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         filterByUrl: function(url) {
             this.each(function(model) {
-                model.set('display', !url || model.get('url') == url);
+                model.set('visible', !url || model.get('url') == url);
             });
         },
         filterByIp: function(ip) {
             if (!ip) return;
             this.each(function(model) {
-                if (model.get('display'))
-                    model.set('display', model.get('ip') == ip);
+                if (model.get('visible'))
+                    model.set('visible', model.get('ip') == ip);
             });
         },
         destroyVisible: function() {
-            var list = this.where({'display': true});
+            var list = this.where({'visible': true});
             if (!list.length) return;
             var dfd = 0;
             _.each(list, function(model) {
@@ -187,65 +182,122 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         fetchFlag = Boolean(b);
     }
 
+    var fileContent = new File({visible:false});
+
     var Selection = Backbone.Model.extend({
         defaults: {
-            value: 0
+            value: ''
         },
-        initialize: function(idLs){
+        init: function(keyLs, list){
+            this.keyLs = keyLs && 'localStorage' in window && window.localStorage?
+                keyLs : 0;
+            this.list = list;
             this.on('change', this.apply);
-            this.idLs = idLs && 'localStorage' in window && window.localStorage?
-                idLs : 0;
+            this.listenTo(this.list, 'reset', this.apply);
+            this.listenTo(this.list, 'sync', this.apply);
             var v;
-            if (this.idLs && (v = localStorage.getItem(this.idLs)))
+            if (this.keyLs && (v = localStorage.getItem(this.keyLs)))
                 this.set('value', v);
-            this.apply();
         },
         select: function(value, bUseDesel) {
             var b = this.get('value') != value;
             if (!b && !bUseDesel) return;
-            this.set('value', b? value : 0);
-            if (this.idLs) localStorage.setItem(this.idLs, this.get('value'));
+            this.set('value', b? value : '');
+            if (this.keyLs) localStorage.setItem(this.keyLs, this.get('value'));
         },
         apply: function() {
+            var v = this.get('value');
+            var found = 0;
+            this.list.each(function(model) {
+                var b = v && model.get('id') == v;
+                model.set('selected', b);
+                if (b) found = model;
+            });
+            this.applyExtra(found);
+        },
+        applyExtra: function(model) {
         }
     });
 
     var UrlSelection = Selection.extend({
         initialize: function() {
-            Selection.prototype.initialize.call(this, 'sel-url');
+            this.init('sel-url', urlList);
         },
-        getModel: function() {
-            return this.get('value')?
-                urlList.findWhere({'id': this.get('value')}) : false;
-        },
-        apply: function() {
-            var v = this.get('value');
-            fileList.filterByUrl(v? v : 0);
+        applyExtra: function(model) {
+            fileList.filterByUrl(this.get('value'));
         }
     });
-    var urlSelection = new UrlSelection();
+    var urlSelection;
     
     var FileSelection = Selection.extend({
         initialize: function() {
-            Selection.prototype.initialize.call(this, 'sel-file');
+            this.model = 0;
+            this.cache = 0;
+            this.init('sel-file', fileList);
         },
         getModel: function() {
-            return this.get('value')?
-                fileList.findWhere({id: this.get('value'), display: true})
-                : false;
+            return this.model;
+        },
+        applyExtra: function(model) {
+            if (this.model) this.stopListening(this.model);
+            this.model = model;
+            if (!this.model) {
+                fileContent.set('visible', false);
+                return;
+            }
+            this.listenTo(this.model, 'change:visible', this.updateContentView);
+            var value = this.get('value');
+            if (value == this.cache) {
+                this.updateContentView();
+                return;
+            }
+            fileContent.set(_.extend(
+                _.omit(this.model.attributes, 'selected'), {'selected': false}
+            ));
+            Backbone.ajax({
+                url: this.model.get('path'),
+                type: 'GET', dataType: 'text', context: this,
+                success: function(text) {
+                    this.cache = value;
+                    fileContent.set('selected', this.fixContent(text));
+                }
+            });
+        },
+        updateContentView: function() {
+            if (!this.model) return;
+            fileContent.set('visible', this.model.get('visible'));
+        },
+        fixContent: function(text) {
+            var map = {
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#039;'
+            };
+            var i = text.indexOf('\n\n');
+            if (i) text = text.substr(i);
+            return text
+                .replace(/[&<>"']/g, function(m) {
+                    return map[m];
+                })
+                .replace(/\n(\d+)\t/g, function(m, s) {
+                    return '\n<strong>+'+s/1000+' sec:</strong>\n';
+                })
+                .replace(/(?:^\s+|\s+$)/g, '');
         }
     });
-    var fileSelection = new FileSelection();
+    var fileSelection;
     
     var FileFilter = Backbone.Model.extend({
         defaults: {
-            value: false
+            value: ''
         },
         initialize: function(){
-            this.listenTo(fileList, 'change:display', this.reset);
+            this.listenTo(fileList, 'change:visible', this.reset);
         },
         reset: function() {
-            this.set('value', false);
+            this.set('value', '');
             setFilelistFetchFlag(true);
         },
         setValue: function(v) {
@@ -253,7 +305,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             setFilelistFetchFlag(false);
         }
     });
-    var fileFilter = new FileFilter();
+    var fileFilter;
 
     var UrlView = Backbone.View.extend({
         tagName: 'li',
@@ -263,6 +315,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             'click a.remove' : 'destroy'
         },
         initialize: function() {
+            this.listenTo(this.model, 'change', this.render);
             this.listenTo(this.model, 'destroy', function() {
                 this.remove();
             });
@@ -273,6 +326,10 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         render: function() {
             this.$el.html( this.template( this.model.toJSON() ) );
+            if (this.model.get('selected'))
+                this.$el.addClass('active');
+            else
+                this.$el.removeClass('active');
             return this;
         },
         select: function(e) {
@@ -290,7 +347,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         initialize: function() {
             this.listenTo(urlList, 'add', this.addOne);
             this.listenTo(urlList, 'all', this.render);
-            urlList.fetch();
         },
         render: function() {
             if (urlList.length)
@@ -303,9 +359,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             if (!('id' in item.attributes)) return;
             var urlView = new UrlView({model:item});
             this.$el.append(urlView.render().el);
-        },
-        addAll: function() {
-            urlList.each(this.addOne, this);
         }
     });
     var urlListView = new UrlListView();
@@ -328,10 +381,14 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             });
         },
         render: function() {
-            if (this.model.get('display'))
+            if (this.model.get('visible'))
                 this.$el.html( this.template( this.model.toJSON() ) ).show();
             else
                 this.$el.hide();
+            if (this.model.get('selected'))
+                this.$el.addClass('active');
+            else
+                this.$el.removeClass('active');
             return this;
         },
         select: function(e) {
@@ -350,8 +407,13 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.listenTo(fileList, 'add', this.addOne);
             this.listenTo(fileList, 'reset', this.addAll);
             this.listenTo(fileList, 'all', this.render);
-            fileList.reset(fileList.parse(deftFilelist));
-            callFilelistFetch();
+            urlList.fetch().done(function() {
+                fileList.reset(fileList.parse(deftFilelist));
+                callFilelistFetch();
+                urlSelection = new UrlSelection();
+                fileSelection = new FileSelection();
+                fileFilter = new FileFilter();
+            });
         },
         render: function() {
             if (fileList.length)
@@ -371,95 +433,15 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     });
     var fileListView = new FileListView();
 
-    var SelectionView = Backbone.View.extend({
-        initialize: function() {
-            this.listenTo(this.model, 'change', this.render);
-            if (this.model.get('value')) this.render();
-        },
-        render: function() {
-            var els = this.$el.children('li');
-            var i = this.getIndex();
-            if (els.length) {
-                els.removeClass('active');
-                if (i && i <= els.length) els.eq(i-1).addClass('active');
-            }
-            return this;
-        },
-        getIndex: function() {
-            return 0;
-        }
-    });
-
-    var UrlSelectionView = SelectionView.extend({
-        el: $('#url-list'),
-        getIndex: function() {
-            var model = this.model.getModel();
-            return model? model.get('i') : 0;
-        }
-    });
-    var urlSelectionView = new UrlSelectionView({model:urlSelection});
-
-    var FileSelectionView = SelectionView.extend({
-        el: $('#file-list'),
-        initialize: function() {
-            this.listenTo(fileList, 'change', this.render);
-            this.listenTo(fileList, 'remove', this.render);
-            this.cache = 0;
-            SelectionView.prototype.initialize.call(this);
-        },
-        getIndex: function() {
-            var model = this.model.getModel();
-            this.callContent(this.model.get('value'), model);
-            return model? model.get('i') : 0;
-        },
-        callContent: function(value, model) {
-            if (!model) {
-                fileContent.set('display', false);
-                return;
-            }
-            if (value == this.cache) {
-                fileContent.set('display', true);
-                return;
-            }
-            var urlCont = model.get('path');
-            fileContent.set({display: false, content: ''});
-            $.ajax({
-                url: urlCont, type: 'GET', dataType: 'text', context: this,
-                success: function(text) {
-                    this.cache = value;
-                    fileContent.set(model.attributes);
-                    fileContent.set('content', this.fixContent(text));
-                }
-            });
-        },
-        fixContent: function (text) {
-            var map = {
-              '&': '&amp;',
-              '<': '&lt;',
-              '>': '&gt;',
-              '"': '&quot;',
-              "'": '&#039;'
-            };
-            var i = text.indexOf('\n\n');
-            if (i) text = text.substr(i);
-            return $.trim(
-                text.replace(/[&<>"']/g, function(m) { return map[m]; })
-                .replace(/\n(\d+)\t/g, function(m, s) {
-                    return '\n<strong>+'+s/1000+' sec:</strong>\n'; }
-                )
-            );
-        }
-    });
-    var fileSelectionView = new FileSelectionView({model:fileSelection});
-
     var FileContentView = Backbone.View.extend({
-        el: $('#file-content'),
+        el: '#file-content',
         template: _.template( $('#content-template').html() ),
         initialize: function() {
             this.listenTo(this.model, 'change', this.render);
         },
         render: function() {
-            if (this.model.get('display') && this.model.get('content')) {
+            var model = fileSelection.getModel();
+            if (model && model.get('visible') && this.model.get('visible') && this.model.get('selected')) {
                 this.$el.html( this.template( this.model.toJSON() ) ).show();
             }
             else
@@ -470,7 +452,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     var fileContentView = new FileContentView({model:fileContent});
 
     var CfgView = Backbone.View.extend({
-        el: $('#config'),
+        el: '#config',
         template: _.template( $('#config-template').html() ),
         events: {
             'click button.save' : 'saveForm'
@@ -498,7 +480,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     var cfgView = new CfgView({model:cfg});
 
     var ControlsView = Backbone.View.extend({
-        el: $('#controls'),
+        el: '#controls',
         events: {
             'keypress input' : 'create',
             'click button.filter' : 'toggle',
