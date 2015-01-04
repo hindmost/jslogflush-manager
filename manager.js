@@ -1,6 +1,6 @@
-function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
+function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) {
 
-    intFilelistFetch = (intFilelistFetch || 60)* 1000;
+    intFilelistUpdate = (intFilelistUpdate || 60)* 1000;
 
     var Cfg = Backbone.Model.extend({
         initialize: function(){
@@ -87,7 +87,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             }
             else {
                 cfg.fetch();
-                callFilelistFetch();
             }
         }
     });
@@ -119,6 +118,9 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         model : File,
         initialize: function() {
             this.lastfetch = 0;
+            this.updCount = this.updId = 0;
+            this.updFlag = true;
+            this.listenTo(cfg, 'sync', this.onCfgSync);
         },
         parse: function(response) {
             var aResp = [];
@@ -147,6 +149,14 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             list.trigger('request', list, xhr, options);
             return xhr;
         },
+        onCfgSync: function(model, resp, options) {
+            if (!resp) {
+                this.update();
+            }
+        },
+        findById: function(id) {
+            return fileList.findWhere({'id': id});
+        },
         filterByUrl: function(url) {
             this.each(function(model) {
                 model.set('visible', !url || model.get('url') == url);
@@ -166,23 +176,74 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             _.each(list, function(model) {
                 dfd = model.destroy();
             });
-            if (dfd) dfd.done(callFilelistFetch);
+            if (dfd) dfd.done(this.update);
+        },
+        update: function() {
+            if (this.updId) clearTimeout(this.updId);
+            if (this.updCount && this.updFlag) this.fetch({remove: true});
+            this.updCount = 1;
+            var fn = _.bind(this.update, this);
+            this.updId = setTimeout(fn, intFilelistUpdate);
+        },
+        setUpdFlag: function(b) {
+            this.updFlag = Boolean(b);
         }
     });
     var fileList = new FileList();
 
-    var fetchCount = 0, fetchId = 0, fetchFlag = true;
-    function callFilelistFetch() {
-        if (fetchId) clearTimeout(fetchId);
-        if (fetchCount && fetchFlag) fileList.fetch({remove: true});
-        fetchCount = 1;
-        fetchId = setTimeout(callFilelistFetch, intFilelistFetch);
-    }
-    function setFilelistFetchFlag(b) {
-        fetchFlag = Boolean(b);
-    }
-
-    var fileContent = new File({visible:false});
+    var FileContent = File.extend({
+        initialize: function() {
+            this.value = 0;
+            this.source = 0;
+        },
+        apply: function(v) {
+            if (this.source) this.stopListening(this.source);
+            this.source = fileList.findById(v) || 0;
+            if (!this.source) {
+                this.updateVisible();
+                return;
+            }
+            this.listenTo(this.source, 'change:visible', this.updateVisible);
+            if (v == this.value) {
+                this.updateVisible();
+                return;
+            }
+            this.set(_.extend(
+                _.omit(this.source.attributes, 'selected'), {'selected': false}
+            ));
+            Backbone.ajax({
+                url: this.source.get('path'),
+                type: 'GET', dataType: 'text', context: this,
+                success: function(text) {
+                    this.value = v;
+                    this.set('selected', this.fixText(text));
+                }
+            });
+        },
+        updateVisible: function() {
+            this.set('visible', this.source? this.source.get('visible') : false);
+        },
+        fixText: function(text) {
+            var map = {
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#039;'
+            };
+            var i = text.indexOf('\n\n');
+            if (i) text = text.substr(i);
+            return text
+                .replace(/[&<>"']/g, function(m) {
+                    return map[m];
+                })
+                .replace(/\n(\d+)\t/g, function(m, s) {
+                    return '\n<strong>+'+s/1000+' sec:</strong>\n';
+                })
+                .replace(/(?:^\s+|\s+$)/g, '');
+        }
+    });
+    var fileContent = new FileContent({visible:false});
 
     var Selection = Backbone.Model.extend({
         defaults: {
@@ -207,15 +268,12 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         apply: function() {
             var v = this.get('value');
-            var found = 0;
             this.list.each(function(model) {
-                var b = v && model.get('id') == v;
-                model.set('selected', b);
-                if (b) found = model;
+                model.set('selected', v && model.get('id') == v);
             });
-            this.applyExtra(found);
+            this.applyExtra();
         },
-        applyExtra: function(model) {
+        applyExtra: function() {
         }
     });
 
@@ -223,72 +281,22 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         initialize: function() {
             this.init('sel-url', urlList);
         },
-        applyExtra: function(model) {
+        applyExtra: function() {
             fileList.filterByUrl(this.get('value'));
         }
     });
-    var urlSelection;
+    var urlSelection = new UrlSelection();
     
     var FileSelection = Selection.extend({
         initialize: function() {
-            this.model = 0;
-            this.cache = 0;
             this.init('sel-file', fileList);
         },
-        getModel: function() {
-            return this.model;
-        },
-        applyExtra: function(model) {
-            if (this.model) this.stopListening(this.model);
-            this.model = model;
-            if (!this.model) {
-                fileContent.set('visible', false);
-                return;
-            }
-            this.listenTo(this.model, 'change:visible', this.updateContentView);
-            var value = this.get('value');
-            if (value == this.cache) {
-                this.updateContentView();
-                return;
-            }
-            fileContent.set(_.extend(
-                _.omit(this.model.attributes, 'selected'), {'selected': false}
-            ));
-            Backbone.ajax({
-                url: this.model.get('path'),
-                type: 'GET', dataType: 'text', context: this,
-                success: function(text) {
-                    this.cache = value;
-                    fileContent.set('selected', this.fixContent(text));
-                }
-            });
-        },
-        updateContentView: function() {
-            if (!this.model) return;
-            fileContent.set('visible', this.model.get('visible'));
-        },
-        fixContent: function(text) {
-            var map = {
-              '&': '&amp;',
-              '<': '&lt;',
-              '>': '&gt;',
-              '"': '&quot;',
-              "'": '&#039;'
-            };
-            var i = text.indexOf('\n\n');
-            if (i) text = text.substr(i);
-            return text
-                .replace(/[&<>"']/g, function(m) {
-                    return map[m];
-                })
-                .replace(/\n(\d+)\t/g, function(m, s) {
-                    return '\n<strong>+'+s/1000+' sec:</strong>\n';
-                })
-                .replace(/(?:^\s+|\s+$)/g, '');
+        applyExtra: function() {
+            fileContent.apply(this.get('value'));
         }
     });
-    var fileSelection;
-    
+    var fileSelection = new FileSelection();
+
     var FileFilter = Backbone.Model.extend({
         defaults: {
             value: ''
@@ -296,16 +304,16 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         initialize: function(){
             this.listenTo(fileList, 'change:visible', this.reset);
         },
-        reset: function() {
-            this.set('value', '');
-            setFilelistFetchFlag(true);
-        },
-        setValue: function(v) {
+        setVal: function(v) {
             this.set('value', v);
-            setFilelistFetchFlag(false);
+            fileList.setUpdFlag(v? true : false);
+            v? fileList.filterByIp(v) : urlSelection.apply();
+        },
+        reset: function() {
+            this.setVal('');
         }
     });
-    var fileFilter;
+    var fileFilter = new FileFilter();
 
     var UrlView = Backbone.View.extend({
         tagName: 'li',
@@ -345,11 +353,12 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
     var UrlListView = Backbone.View.extend({
         el: '#url-list',
         initialize: function() {
-            this.listenTo(urlList, 'add', this.addOne);
-            this.listenTo(urlList, 'all', this.render);
+            this.listenTo(this.collection, 'add', this.addOne);
+            this.listenTo(this.collection, 'all', this.render);
+            this.collection.fetch();
         },
         render: function() {
-            if (urlList.length)
+            if (this.collection.length)
                 this.$el.show();
             else
                 this.$el.hide();
@@ -361,7 +370,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.$el.append(urlView.render().el);
         }
     });
-    var urlListView = new UrlListView();
+    var urlListView = new UrlListView({collection: urlList});
 
     var FileView = Backbone.View.extend({
         tagName: 'li',
@@ -397,26 +406,21 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         },
         destroy: function(e) {
             e.preventDefault();
-            this.model.destroy().done(callFilelistFetch);
+            this.model.destroy().done(fileList.update);
         }
     });
 
     var FileListView = Backbone.View.extend({
         el: '#file-list',
         initialize: function() {
-            this.listenTo(fileList, 'add', this.addOne);
-            this.listenTo(fileList, 'reset', this.addAll);
-            this.listenTo(fileList, 'all', this.render);
-            urlList.fetch().done(function() {
-                fileList.reset(fileList.parse(deftFilelist));
-                callFilelistFetch();
-                urlSelection = new UrlSelection();
-                fileSelection = new FileSelection();
-                fileFilter = new FileFilter();
-            });
+            this.listenTo(this.collection, 'add', this.addOne);
+            this.listenTo(this.collection, 'reset', this.addAll);
+            this.listenTo(this.collection, 'all', this.render);
+            this.collection.reset(this.collection.parse(deftFilelist));
+            this.collection.update();
         },
         render: function() {
-            if (fileList.length)
+            if (this.collection.length)
                 this.$el.show();
             else
                 this.$el.hide();
@@ -428,10 +432,10 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.$el.append(fileView.render().el);
         },
         addAll: function() {
-            fileList.each(this.addOne, this);
+            this.collection.each(this.addOne, this);
         }
     });
-    var fileListView = new FileListView();
+    var fileListView = new FileListView({collection: fileList});
 
     var FileContentView = Backbone.View.extend({
         el: '#file-content',
@@ -440,8 +444,8 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             this.listenTo(this.model, 'change', this.render);
         },
         render: function() {
-            var model = fileSelection.getModel();
-            if (model && model.get('visible') && this.model.get('visible') && this.model.get('selected')) {
+            if (this.model.source && this.model.source.get('visible') &&
+                this.model.get('visible') && this.model.get('selected')) {
                 this.$el.html( this.template( this.model.toJSON() ) ).show();
             }
             else
@@ -449,7 +453,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
             return this;
         }
     });
-    var fileContentView = new FileContentView({model:fileContent});
+    var fileContentView = new FileContentView({model: fileContent});
 
     var CfgView = Backbone.View.extend({
         el: '#config',
@@ -511,23 +515,16 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistFetch) {
         refresh: function(e) {
             e.preventDefault();
             $(e.target).blur();
-            callFilelistFetch();
+            fileList.update();
         },
         toggle: function(e) {
             e.preventDefault();
             $(e.target).blur();
             var v = this.model.get('value');
-            var model = v? false : fileSelection.getModel();
-            if (!v && !model) return;
-            if (!v) {
-                v = model.get('ip');
-                fileList.filterByIp(v);
-                this.model.setValue(v);
-            }
-            else {
+            if (v)
                 this.model.reset();
-                urlSelection.apply();
-            }
+            else if (fileContent.model)
+                this.model.setVal(fileContent.model.get('ip'));
         },
         destroy: function(e) {
             e.preventDefault();
