@@ -95,7 +95,6 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
     var File = Backbone.Model.extend({
         defaults: {
             id: '',
-            path: '',
             url: '',
             time: 0,
             ip: '',
@@ -131,7 +130,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
                 }
                 var arr = response[key];
                 aResp.push({
-                    id: key, path: cfg.get('dir')+key, url: arr[0],
+                    id: key, url: arr[0],
                     time: (new Date(arr[1]*1000)).toLocaleString(),
                     ip: arr[2], useragent: arr[3]
                 });
@@ -155,7 +154,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
             }
         },
         findById: function(id) {
-            return fileList.findWhere({'id': id});
+            return this.findWhere({'id': id});
         },
         filterByUrl: function(url) {
             this.each(function(model) {
@@ -170,13 +169,14 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
             });
         },
         destroyVisible: function() {
-            var list = this.where({'visible': true});
-            if (!list.length) return;
-            var dfd = 0;
+            var list = this.where({'visible': true}), n = list.length;
+            if (!n) return;
+            var count = 0, self = this;
             _.each(list, function(model) {
-                dfd = model.destroy();
+                model.destroy().always(function() {
+                    if (++count >= n) self.update();
+                });
             });
-            if (dfd) dfd.done(this.update);
         },
         update: function() {
             if (this.updId) clearTimeout(this.updId);
@@ -192,6 +192,10 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
     var fileList = new FileList();
 
     var FileContent = File.extend({
+        defaults: {
+            path: '',
+            content: ''
+        },
         initialize: function() {
             this.value = 0;
             this.source = 0;
@@ -209,14 +213,15 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
                 return;
             }
             this.set(_.extend(
-                _.omit(this.source.attributes, 'selected'), {'selected': false}
+                _.omit(this.source.attributes, 'selected'),
+                {'content': '', 'path': cfg.get('dir')+this.source.get('id')}
             ));
             Backbone.ajax({
-                url: this.source.get('path'),
+                url: this.get('path'),
                 type: 'GET', dataType: 'text', context: this,
                 success: function(text) {
                     this.value = v;
-                    this.set('selected', this.fixText(text));
+                    this.set('content', this.fixText(text));
                 }
             });
         },
@@ -406,7 +411,9 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
         },
         destroy: function(e) {
             e.preventDefault();
-            this.model.destroy().done(fileList.update);
+            this.model.destroy().always(function() {
+                fileList.update();
+            });
         }
     });
 
@@ -445,7 +452,7 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
         },
         render: function() {
             if (this.model.source && this.model.source.get('visible') &&
-                this.model.get('visible') && this.model.get('selected')) {
+                this.model.get('visible') && this.model.get('content')) {
                 this.$el.html( this.template( this.model.toJSON() ) ).show();
             }
             else
@@ -523,8 +530,8 @@ function manager(urlCfg, urlFilelist, deftCfg, deftFilelist, intFilelistUpdate) 
             var v = this.model.get('value');
             if (v)
                 this.model.reset();
-            else if (fileContent.model)
-                this.model.setVal(fileContent.model.get('ip'));
+            else if (fileContent.source)
+                this.model.setVal(fileContent.source.get('ip'));
         },
         destroy: function(e) {
             e.preventDefault();
